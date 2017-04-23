@@ -1,5 +1,5 @@
 import pydivert
-from pydivert import windivert_dll
+
 
 # Whats available to modify in packets: 
 """
@@ -59,18 +59,210 @@ Packet({'direction': <Direction.OUTBOUND: 0>,
          'urg_ptr': 0,
          'window_size': 8192},
  'udp': None})
+This is a syn packet, looking for options...
+..options: <memory at 0x0000000003A74558>
+.. toBytes: 020405b40103030801010402
+.. toList: [2, 4, 5, 180, 1, 3, 3, 8, 1, 1, 4, 2]
+.. is this read only? False
+packet raw 450000344959400040069d5c0a0000070a000008ec0e04d203a86c760000000080022000da020000020405b40103030801010402
+ip raw 450000344959400040069d5c0a0000070a000008ec0e04d203a86c760000000080022000da020000020405b40103030801010402
+tcp raw ec0e04d203a86c760000000080022000da020000020405b40103030801010402
 """
 
-# TCP OPTIONS:
-# 0 End of options list
-# 1 NOP
-# 2 MSS
-# 3 Window Scale
-# 4 Selective ACK ok
-# 8 Timemstamp
+# tsval sample: 08, 0a, 01 83 8a c2, 00 00 00 00
+#              kind, len, tsval, tsreply
+
+class Spoof:
+    wildcard = "*"
+    optionNameToByte = {'end':'00', 'nop':'01', 'mss':'02', 'ws':'03', 'sok':'04', 'ts':'08'}
+    linuxDefOptVals = {'00':"", '01':"", '02':"0405b4", '03':"0307", '04':"02", '08':"0a0000000000000000"}
+    linuxSig = "*:64:0:*:mss*20,7:mss,sok,ts,nop,ws:df,id+:0" 
+
+    def __init__(self, spoofType):
+        if spoofType == "Linux":
+            self.configure(self.linuxSig)
+
+    def configure(self, sig):
+        s = str.split(sig, ":")
+        self.version = s[0]
+        self.ttl = s[1]
+        self.olen = s[2]
+        self.mss = s[3]
+        self.wsize_multiplier = str.split(str.split(s[4], ",")[0], "*")[1]
+        self.wscale = str.split(s[4], ",")[1]
+        self.olayout = [self.optionNameToByte[x] for x in str.split(s[5], ",")]
+        self.quirks = str.split(s[6], ",")
+        self.pclass = s[7]
+        self.defOptVals = self.linuxDefOptVals
+
 
 # Make dict of decimal mss values to hex bytes
 mssDict = {64:(b'\x02',b'\x40')}
+
+# Option name string to byte value
+byteToOptName = {'00':'end', '01':'nop', '02':'mss', '03':'ws', '04':'sok', '08':'ts'}
+
+# sig = ver:ittl:olen:mss:wsize,scale:olayout:quirks:pclass
+
+# ver = ipv4 or ipv6 version
+# olen = length of IPv4 options or IPv6 extension headers
+# olayout = TCP options layout
+# quirks = other properties observed in IP or TCP header, like "do not fragment", or "PUSH flag used"
+# pclass = payload size classification: '0' for zero, '+' nonzero, '*' for any.
+
+def spoofPacket(spoof, packet):
+    interface = packet.interface
+    direction = packet.direction
+    rawBytes = str(packet.raw.tobytes()).encode('hex')
+    print "phase 1 raw", rawBytes
+    db = [rawBytes]
+    # set all new tcp values except options here
+    # Regarding:
+    #   version - no value to set in packet object
+    #   olen    - no value to set in packet object
+    #             seems to always be 0 in the sigs anyway
+    #   mss,scale,window_size
+    #           - have to be set after parsing options
+    if spoof.ttl != spoof.wildcard:
+        packet.ipv4.ttl = int(spoof.ttl)
+    # we either return this packet with some easily modified vars, 
+    # or a new copy created if there are options to change
+    rawBytes = str(packet.raw.tobytes()).encode('hex')
+    print "phase 2 raw", rawBytes
+    db.append(rawBytes)
+
+    # If tcp header length > 20 then we have tcp options
+    # set them to spoofs options and be sure to recalc packet header len and data offset AND ipv4 packet_len
+    if packet.tcp.header_len > 20:
+        # Get memory view object of tcp reader
+        mv = packet.tcp.raw
+        options = mv[20:]
+        oldOptionsBytes = str(options.tobytes()).encode('hex')
+        if len(oldOptionsBytes) % 2 != 0:
+            return
+
+        # since we're parsing up options, grab the new wsize too
+        newOptionsBytes, wsize = reorderOptions(oldOptionsBytes, spoof)
+        print "returned from reorderOptions"
+        rawBytes = str(packet.raw.tobytes()).encode('hex')
+        print "phase 3 raw", rawBytes
+
+        # Mss and Scale were set in reorderOptions. Set new window_size to match
+        packet.tcp.window_size = wsize
+        print "here 0 "
+        
+        # set new header lenghts and data offset to match new options
+        oldOptLen = len(oldOptionsBytes) / 2  # b/c counting num bytes, "5a" = one byte
+        newOptLen = len(newOptionsBytes) / 2
+        
+        print "here with packet.ipv4.packet_len", packet.ipv4.packet_len
+        packet.ipv4.packet_len = packet.ipv4.packet_len - oldOptLen + newOptLen
+        # !! TODO it looks like I cannot change packet header_len. Might be we just have to 
+        # set date offset and it will calc header len for us...
+
+        # print "here with packet.tcp.header_len", packet.tcp.header_len
+        # packet.tcp.header_len = 33
+        # print "here with packet.tcp.header_len", packet.tcp.header_len
+        # packet.tcp.header_len = packet.tcp.header_len - oldOptLen + newOptLen
+        # print "here 3 "
+        packet.tcp.data_offset = (packet.tcp.header_len - oldOptLen + newOptLen) / 4
+
+
+        # write data to new string representing rawbytes
+        rawBytes = str(packet.raw.tobytes()).encode('hex')
+        rawBytes = rawBytes.replace(oldOptionsBytes, newOptionsBytes)
+        print "phase 4 raw", rawBytes
+        db.append(rawBytes)
+
+        print ""
+        print db[0]
+        print db[1]
+        print db[2]
+
+        # print ("..options: " + str(options))
+        # print (".. toBytes: " + str(options.tobytes()).encode('hex'))
+        # print (".. toList: " + str(options.tolist()))
+        # print (".. is this read only? " + str(options.readonly))  # we want to be able to write to this mem location
+
+        # index = getMssIndex(options.tolist())
+        # # set new mss
+        # if index is not None:
+        #     print (".. writting 02 171 to options")
+        #     options[index+2] = mssDict[64][0]
+        #     options[index+3] = mssDict[64][1]
+        #     # options[index+3] = b'\x40'
+        #     print (".. options toBytes: " + str(options.tobytes()).encode('hex'))
+
+
+def reorderOptions(optionsBytes, spoof):
+    """
+    
+    Returns: string representing new options to use in a packet.
+                EX: newOptions "020405b40402080a000000000000000001030308"
+             integer mss value
+             integer window size value
+    """
+    # Hmmmm question here. We are not just reortering the values, we need them to match 
+    # the spoof values. So we are just overwriting them. If we make them shorter, can 
+    # we cant just make the tcp header shorter. So we can try two things:
+    #  1. Fill the rest in the 0s, 0 means options is over, but then are we making the
+    #     start of the payload to be the extra 0's? 
+    #  2. Create a completely new packet and copy everything that is unchanged over.
+
+    optionsList = [optionsBytes[i:i + 2] for i in range(0, len(optionsBytes), 2)]
+    print "parsed options", optionsList
+
+    # make a dict of option title byte to list of other bytes that go with it
+    # ignore nops
+    optionsDict = dict()
+    i = 0
+    while i < (len(optionsList) - 1): # get to 2nd to last byte since we will be reading ahead or its a nop/end
+        if optionsList[i] in byteToOptName:
+            if optionsList[i] == '01':
+                i += 1
+            elif optionsList[i] == '00':
+                # end of options
+                break
+            else:
+                command = optionsList[i]
+                end = i + int(optionsList[i+1],16) 
+                optionsDict[command] = list() # we should be putting a command in here, like '02' for mss
+                # make a list of what else goes with this option and put in dict
+                i += 1
+                while i < end:
+                    optionsDict[command].append(optionsList[i])
+                    i += 1
+
+    print "------> optionsDict", optionsDict
+    newOrder = spoof.olayout
+    print "newOrder", newOrder
+    newOptions = ""
+    # We need to find some default values for these options in 
+    # case they are not in the packet we are inspecting
+    for byte in spoof.olayout:
+        # scale has to be set to signature scale
+        if byte != spoof.optionNameToByte["ws"] and byte in optionsDict:
+            newOptions += byte + "".join(optionsDict[byte])
+        else:  # include it with a default value
+            newOptions += byte + spoof.defOptVals[byte]
+        if byte == spoof.optionNameToByte["mss"]:
+            mss = int(newOptions[-4:], 16)
+
+    if not mss:
+        print "Warning: did not have mss set. Using default."
+        mss = int(spoof.defOptVals[spoof.optionNameToByte["mss"]][-4:], 16)
+
+    # the window size is dependent on knowing the mss and scale.
+    # Calculate the new size here and return it so we can put it in the packet.
+    print "mss", mss
+    print "optname to byte for ws", spoof.optionNameToByte["ws"]
+    print "ws", spoof.defOptVals[spoof.optionNameToByte["ws"]][-2:]
+    print "int(ws multiplier,16)", int(spoof.wsize_multiplier)
+    wsize = mss * int(spoof.wsize_multiplier)
+    print "new window size", wsize
+
+    print "newOptions", newOptions
+    return newOptions, wsize
 
 
 def getMssIndex(options):
@@ -96,6 +288,11 @@ def getMssIndex(options):
 
 def main():
     print("Started d-divert")
+    print("getting spoof object")
+    lspoof = Spoof("Linux")
+    # lspoof = spoof.spoof("Linux")
+    print lspoof.ttl
+    print lspoof.olayout
     # It sucks that windivert filters like this. It would be cool if we 
     # could pass it a bpf like "port 1234" from the command line
     with pydivert.WinDivert("tcp.DstPort==1234 or tcp.SrcPort==1234") as w:
@@ -113,28 +310,41 @@ def main():
             # handshake, or that fingerprinters typically only look at the handshake anyway
             if packet.tcp.syn is True and packet.tcp.ack is False :
                 print ("This is a syn packet, looking for options...")
-                
-                # If tcp header length > 20 then we have tcp options
-                if packet.tcp.header_len > 20:
-                    # Get memory view object of tcp reader
-                    mv = packet.tcp.raw
-                    options = mv[20:]
-                    print ("..options: " + str(options))
-                    print (".. toBytes: " + str(options.tobytes()).encode('hex'))
-                    print (".. toList: " + str(options.tolist()))
-                    print (".. is this read only? " + str(options.readonly))  # we want to be able to write to this mem location
-                    index = getMssIndex(options.tolist())
 
-                    # set new mss
-                    if index is not None:
-                        print (".. writting 02 171 to options")
-                        options[index+2] = mssDict[64][0]
-                        options[index+3] = mssDict[64][1]
-                        # options[index+3] = b'\x40'
-                        print (".. options toBytes: " + str(options.tobytes()).encode('hex'))
+                spoofPacket(lspoof, packet)
+                
+                # # If tcp header length > 20 then we have tcp options
+                # if packet.tcp.header_len > 20:
+                #     # Get memory view object of tcp reader
+                #     mv = packet.tcp.raw
+                #     options = mv[20:]
+                #     print ("..options: " + str(options))
+                #     print (".. toBytes: " + str(options.tobytes()).encode('hex'))
+                #     print (".. toList: " + str(options.tolist()))
+                #     print (".. is this read only? " + str(options.readonly))  # we want to be able to write to this mem location
+                   
+                #     print "packet raw", str(packet.raw.tobytes()).encode('hex')
+                #     print "ip raw", str(packet.ipv4.raw.tobytes()).encode('hex')
+                #     print "tcp raw", str(packet.tcp.raw.tobytes()).encode('hex')
+
+                #     if reorderOptions(options, lspoof) == None:
+                #         pass # should do some kind of checking
+
+
+                #     index = getMssIndex(options.tolist())
+                #     # set new mss
+                #     if index is not None:
+                #         print (".. writting 02 171 to options")
+                #         options[index+2] = mssDict[64][0]
+                #         options[index+3] = mssDict[64][1]
+                #         # options[index+3] = b'\x40'
+                #         print (".. options toBytes: " + str(options.tobytes()).encode('hex'))
             
             # No need to recalc checksum, send does it for us.
             w.send(packet)
 
 if __name__ == "__main__":
     main()
+
+
+

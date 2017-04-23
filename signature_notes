@@ -114,3 +114,22 @@ p0f output:
 | raw_freq = 249.93 Hz
 |
 `----
+
+
+# Note on TCP timestamp option #
+################################
+I cannot figure out how it is generataed. RFC 1323 states that it is to be generated with a
+"timestamp clock". I cannot find what linux or windows use to generate the timestamp, or even
+what format it is in. Is it epoch seconds? Seconds since reboot? Both would seem to be good ideas, 
+but I tested a value from looking at a tsval in wireshark, and it does not seem to fit either. 
+
+Wireshark: linux syn packet
+Timestamps: TSval 25397954, TSecr 0
+    Kind: Time Stamp Option (8)
+    Length: 10
+    Timestamp value: 25397954
+    Timestamp echo reply: 0
+
+https://www.ietf.org/rfc/rfc1323.txt
+
+Going to fill this with just 0's for now, maybe it will just look like a malformed option.

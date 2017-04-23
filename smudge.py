@@ -98,37 +98,41 @@ def main():
     print("Started d-divert")
     # It sucks that windivert filters like this. It would be cool if we 
     # could pass it a bpf like "port 1234" from the command line
-    with pydivert.WinDivert("tcp.DstPort == 1234 or tcp.SrcPort == 1234") as w:
+    with pydivert.WinDivert("tcp.DstPort==1234 or tcp.SrcPort==1234") as w:
+        print "here"
+        print w
         for packet in w:
             print "got packet"
-            if packet.src_addr == '10.0.0.25' or packet.dst_addr == '10.0.0.25':
-                print (packet)
-                packet.ipv4.ttl = 64
+            print "ports", packet.src_port, packet.dst_port
+            #if packet.src_addr == '10.0.0.25' or packet.dst_addr == '10.0.0.25':
+            #if packet.dst_port == 1234 or packet.src_port == 1234:
+            print (packet)
+            packet.ipv4.ttl = 64
 
-                # Look for syn packet. I think I read that mss is negotiated in 
-                # handshake, or that fingerprinters typically only look at the handshake anyway
-                if packet.tcp.syn is True and packet.tcp.ack is False :
-                    print ("This is a syn packet, looking for options...")
-                    
-                    # If tcp header length > 20 then we have tcp options
-                    if packet.tcp.header_len > 20:
-                        # Get memory view object of tcp reader
-                        mv = packet.tcp.raw
-                        options = mv[20:]
-                        print ("..options: " + str(options))
-                        print (".. toBytes: " + str(options.tobytes()).encode('hex'))
-                        print (".. toList: " + str(options.tolist()))
-                        print (".. is this read only? " + str(options.readonly))  # we want to be able to write to this mem location
-                        index = getMssIndex(options.tolist())
-
-                        # set new mss
-                        if index is not None:
-                            print (".. writting 02 171 to options")
-                            options[index+2] = mssDict[64][0]
-                            options[index+3] = mssDict[64][1]
-                            # options[index+3] = b'\x40'
-                            print (".. options toBytes: " + str(options.tobytes()).encode('hex'))
+            # Look for syn packet. I think I read that mss is negotiated in 
+            # handshake, or that fingerprinters typically only look at the handshake anyway
+            if packet.tcp.syn is True and packet.tcp.ack is False :
+                print ("This is a syn packet, looking for options...")
                 
+                # If tcp header length > 20 then we have tcp options
+                if packet.tcp.header_len > 20:
+                    # Get memory view object of tcp reader
+                    mv = packet.tcp.raw
+                    options = mv[20:]
+                    print ("..options: " + str(options))
+                    print (".. toBytes: " + str(options.tobytes()).encode('hex'))
+                    print (".. toList: " + str(options.tolist()))
+                    print (".. is this read only? " + str(options.readonly))  # we want to be able to write to this mem location
+                    index = getMssIndex(options.tolist())
+
+                    # set new mss
+                    if index is not None:
+                        print (".. writting 02 171 to options")
+                        options[index+2] = mssDict[64][0]
+                        options[index+3] = mssDict[64][1]
+                        # options[index+3] = b'\x40'
+                        print (".. options toBytes: " + str(options.tobytes()).encode('hex'))
+            
             # No need to recalc checksum, send does it for us.
             w.send(packet)
 

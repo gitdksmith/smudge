@@ -1,0 +1,116 @@
+# P0F FINGERPRINT DATABASE SIGNATURES #
+#######################################
+README: https://github.com/ValdikSS/p0f-mtu
+
+sig = ver:ittl:olen:mss:wsize,scale:olayout:quirks:pclass
+
+ver = ipv4 or ipv6 version
+olen = length of IPv4 options or IPv6 extension headers
+olayout = TCP options layout
+quirks = other properties observed in IP or TCP header, like "do not fragment", or "PUSH flag used"
+pclass = payload size classification: '0' for zero, '+' nonzero, '*' for any.
+
+Some sigs from p0f.fp:
+
+label = s:win:Windows:7 or 8
+sig   = *:128:0:*:8192,0:mss,nop,nop,sok:df,id+:0
+sig   = *:128:0:*:8192,2:mss,nop,ws,nop,nop,sok:df,id+:0
+sig   = *:128:0:*:8192,8:mss,nop,ws,nop,nop,sok:df,id+:0
+sig   = *:128:0:*:8192,2:mss,nop,ws,sok,ts:df,id+:0
+
+label = s:unix:Linux:3.11 and newer
+sig   = *:64:0:*:mss*20,10:mss,sok,ts,nop,ws:df,id+:0
+sig   = *:64:0:*:mss*20,7:mss,sok,ts,nop,ws:df,id+:0
+
+label = s:unix:Linux:3.1-3.10
+sig   = *:64:0:*:mss*10,4:mss,sok,ts,nop,ws:df,id+:0
+sig   = *:64:0:*:mss*10,5:mss,sok,ts,nop,ws:df,id+:0
+sig   = *:64:0:*:mss*10,6:mss,sok,ts,nop,ws:df,id+:0
+sig   = *:64:0:*:mss*10,7:mss,sok,ts,nop,ws:df,id+:0
+
+
+
+# WINDOWS 10 FINGERPRINT #
+##########################
+
+.-[ 10.0.0.7/59164 -> 10.0.0.8/1234 (syn) ]-
+|
+| client   = 10.0.0.7/59164
+| os       = Windows 7 or 8
+| dist     = 0
+| params   = none
+| raw_sig  = 4:128+0:0:1460:8192,8:mss,nop,ws,nop,nop,sok:df,id+:0
+|
+`----
+
+.-[ 10.0.0.7/59164 -> 10.0.0.8/1234 (mtu) ]-
+|
+| client   = 10.0.0.7/59164
+| link     = Ethernet or modem
+| raw_mtu  = 1500
+|
+`----
+
+
+
+# Smudged WINDOWS 10 FINGERPRINT #
+##################################
+Modifications:
+	Param     From     To
+	TTL       128      64
+	MSS       1460     576
+
+.-[ 10.0.0.7/59034 -> 10.0.0.8/1234 (syn) ]-
+|
+| client   = 10.0.0.7/59034
+| os       = Windows 7 or 8
+| dist     = 0
+| params   = fuzzy
+| raw_sig  = 4:64+0:0:576:8192,8:mss,nop,ws,nop,nop,sok:df,id+:0
+|
+`----
+
+.-[ 10.0.0.7/59034 -> 10.0.0.8/1234 (mtu) ]-
+|
+| client   = 10.0.0.7/59034
+| link     = ???
+| raw_mtu  = 616
+|
+`----
+
+
+
+# KALI FINGERPRINT#
+###################
+
+Kali VM
+# uname -a
+Linux k 4.3.0-kali1-amd64 #1 SMP Debian 4.3.3-5kali4 (2016-01-13) x86_64 GNU/Linux
+
+p0f output:
+
+-[ 10.0.0.8/54560 -> 10.0.0.14/1234 (syn) ]-
+|
+| client   = 10.0.0.8/54560
+| os       = Linux 3.11 and newer
+| dist     = 0
+| params   = none
+| raw_sig  = 4:64+0:0:1460:mss*20,7:mss,sok,ts,nop,ws:df,id+:0
+|
+`----
+
+.-[ 10.0.0.8/54560 -> 10.0.0.14/1234 (mtu) ]-
+|
+| client   = 10.0.0.8/54560
+| link     = Ethernet or modem
+| raw_mtu  = 1500
+|
+`----
+
+.-[ 10.0.0.8/54560 -> 10.0.0.14/1234 (uptime) ]-
+|
+| client   = 10.0.0.8/54560
+| uptime   = 1 days 0 hrs 0 min (modulo 198 days)
+| raw_freq = 249.93 Hz
+|
+`----

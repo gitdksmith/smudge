@@ -10,6 +10,13 @@ olayout = TCP options layout
 quirks = other properties observed in IP or TCP header, like "do not fragment", or "PUSH flag used"
 pclass = payload size classification: '0' for zero, '+' nonzero, '*' for any.
 
+Attemts:
+1. raw_sig  = 4:64+0:0:1460:mss*20,0:mss,sok,ts:df,id+,bad:+   --> didnt have tcp data_offset updating
+2. raw_sig  = 4:64+0:0:1460:mss*20,7:mss,sok,ts,nop,ws:df,id+,ts1-:0  --> blank tsval
+3. raw_sig  = 4:64+0:0:1460:mss*20,7:mss,sok,ts,nop,ws:df,id+:0  ----> winner!
+Timestamps: TSval 30071228, TSecr 0
+Got it to guess linux. Had to hard code that tsval in so I still have that to figure out.
+
 Some sigs from p0f.fp:
 
 label = s:win:Windows:7 or 8

@@ -1,5 +1,5 @@
 import pydivert
-
+import time
 
 # Whats available to modify in packets: 
 """
@@ -81,6 +81,17 @@ class Spoof:
     def __init__(self, spoofType):
         if spoofType == "Linux":
             self.configure(self.linuxSig)
+            self.tsval_generate(self.linuxDefOptVals)
+
+    #right now this is hardcoded for Linux only timestamp generation
+    def tsval_generate(self, vals):
+        #this gets the hex value of the epoch time and strips out the 0x
+        tsval = hex(int(time.time()))
+        tsval = tsval[2:]
+
+        self.defOptVals['08'] = "0a" + tsval + "00000000"
+
+
 
     def configure(self, sig):
         s = str.split(sig, ":")

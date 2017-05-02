@@ -140,3 +140,76 @@ Timestamps: TSval 25397954, TSecr 0
 https://www.ietf.org/rfc/rfc1323.txt
 
 Going to fill this with just 0's for now, maybe it will just look like a malformed option.
+
+
+
+
+
+# Whats available via PyDivert to modify in packets #
+#####################################################
+
+Packet({'direction': <Direction.OUTBOUND: 0>,
+ 'dst_addr': '10.0.0.25',
+ 'dst_port': 1234,
+ 'icmpv4': None,
+ 'icmpv6': None,
+ 'interface': (21L, 0L),
+ 'ipv4': {'cksum': 45575,
+          'df': True,
+          'diff_serv': 0,
+          'dscp': 0,
+          'dst_addr': '10.0.0.25',
+          'ecn': 0,
+          'evil': False,
+          'flags': 2,
+          'frag_offset': 0,
+          'hdr_len': 5,
+          'header_len': 20,
+          'ident': 29853,
+          'mf': False,
+          'packet_len': 52,
+          'raw': <memory at 0x0000000003DECAF8>,
+          'reserved': False,
+          'src_addr': '10.0.0.7',
+          'tos': 0,
+          'ttl': 64},
+ 'ipv6': None,
+ 'is_inbound': False,
+ 'is_loopback': False,
+ 'is_outbound': True,
+ 'payload': '',
+ 'raw': <memory at 0x0000000003DECB88>,
+ 'src_addr': '10.0.0.7',
+ 'src_port': 51248,
+ 'tcp': {'ack': False,
+         'ack_num': 0,
+         'cksum': 26893,
+         'control_bits': 2,
+         'cwr': False,
+         'data_offset': 8,
+         'dst_port': 1234,
+         'ece': False,
+         'fin': False,
+         'header_len': 32,
+         'ns': False,
+         'payload': '',
+         'psh': False,
+         'raw': <memory at 0x0000000003DECC18>,
+         'reserved': 0,
+         'rst': False,
+         'seq_num': 3250407063L,
+         'src_port': 51248,
+         'syn': True,
+         'urg': False,
+         'urg_ptr': 0,
+         'window_size': 8192},
+ 'udp': None})
+
+This is a syn packet, looking for options...
+..options: <memory at 0x0000000003A74558> (memory view object)
+.. toBytes: 020405b40103030801010402
+.. toList: [2, 4, 5, 180, 1, 3, 3, 8, 1, 1, 4, 2]
+.. is this read only? False
+packet raw 450000344959400040069d5c0a0000070a000008ec0e04d203a86c760000000080022000da020000020405b40103030801010402
+ip raw 450000344959400040069d5c0a0000070a000008ec0e04d203a86c760000000080022000da020000020405b40103030801010402
+tcp raw ec0e04d203a86c760000000080022000da020000020405b40103030801010402

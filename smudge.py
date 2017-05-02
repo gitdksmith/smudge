@@ -1,73 +1,7 @@
 import pydivert
+import getopt
+import sys 
 import time
-
-# Whats available to modify in packets: 
-"""
-Packet({'direction': <Direction.OUTBOUND: 0>,
- 'dst_addr': '10.0.0.25',
- 'dst_port': 1234,
- 'icmpv4': None,
- 'icmpv6': None,
- 'interface': (21L, 0L),
- 'ipv4': {'cksum': 45575,
-          'df': True,
-          'diff_serv': 0,
-          'dscp': 0,
-          'dst_addr': '10.0.0.25',
-          'ecn': 0,
-          'evil': False,
-          'flags': 2,
-          'frag_offset': 0,
-          'hdr_len': 5,
-          'header_len': 20,
-          'ident': 29853,
-          'mf': False,
-          'packet_len': 52,
-          'raw': <memory at 0x0000000003DECAF8>,
-          'reserved': False,
-          'src_addr': '10.0.0.7',
-          'tos': 0,
-          'ttl': 64},
- 'ipv6': None,
- 'is_inbound': False,
- 'is_loopback': False,
- 'is_outbound': True,
- 'payload': '',
- 'raw': <memory at 0x0000000003DECB88>,
- 'src_addr': '10.0.0.7',
- 'src_port': 51248,
- 'tcp': {'ack': False,
-         'ack_num': 0,
-         'cksum': 26893,
-         'control_bits': 2,
-         'cwr': False,
-         'data_offset': 8,
-         'dst_port': 1234,
-         'ece': False,
-         'fin': False,
-         'header_len': 32,
-         'ns': False,
-         'payload': '',
-         'psh': False,
-         'raw': <memory at 0x0000000003DECC18>,
-         'reserved': 0,
-         'rst': False,
-         'seq_num': 3250407063L,
-         'src_port': 51248,
-         'syn': True,
-         'urg': False,
-         'urg_ptr': 0,
-         'window_size': 8192},
- 'udp': None})
-This is a syn packet, looking for options...
-..options: <memory at 0x0000000003A74558>
-.. toBytes: 020405b40103030801010402
-.. toList: [2, 4, 5, 180, 1, 3, 3, 8, 1, 1, 4, 2]
-.. is this read only? False
-packet raw 450000344959400040069d5c0a0000070a000008ec0e04d203a86c760000000080022000da020000020405b40103030801010402
-ip raw 450000344959400040069d5c0a0000070a000008ec0e04d203a86c760000000080022000da020000020405b40103030801010402
-tcp raw ec0e04d203a86c760000000080022000da020000020405b40103030801010402
-"""
 
 # tsval sample: 08, 0a, 01 83 8a c2, 00 00 00 00
 #              kind, len, tsval, tsreply
@@ -84,14 +18,12 @@ tcp raw ec0e04d203a86c760000000080022000da020000020405b40103030801010402
 class Spoof:
     wildcard = "*"
     optionNameToByte = {'end':'00', 'nop':'01', 'mss':'02', 'ws':'03', 'sok':'04', 'ts':'08'}
-    # linuxDefOptVals = {'00':"", '01':"", '02':"0405b4", '03':"0307", '04':"02", '08':"0a01cad9bc00000000"}
     linuxDefOptVals = {'00':"", '01':"", '02':"0405b4", '03':"0307", '04':"02", '08':"0axxxxxxxx00000000"}
     linuxSig = "*:64:0:*:mss*20,7:mss,sok,ts,nop,ws:df,id+:0" 
 
     def __init__(self, spoofType):
         if spoofType == "Linux":
             self.configure(self.linuxSig)
-            # self.tsval_generate(self.linuxDefOptVals)
 
     def configure(self, sig):
         s = str.split(sig, ":")
@@ -110,6 +42,10 @@ class Spoof:
 # Option name string to byte value
 byteToOptName = {'00':'end', '01':'nop', '02':'mss', '03':'ws', '04':'sok', '08':'ts'}
 
+# Available Types
+typeMap = {0:'Linux'}
+DEFAULT_SPOOF_TYPE = "Linux"
+
 
 def tsval_generate(spoof):
     # this gets the hex value of the epoch time and strips out the 0x
@@ -120,11 +56,9 @@ def tsval_generate(spoof):
 
 def spoofPacket(spoof, packet):
     rawBytes = str(packet.raw.tobytes()).encode('hex')
-    # print "phase 1 raw", rawBytes
     db = [rawBytes]
     
-    # set all new tcp values except options here
-    # Regarding:
+    # set all new tcp values except these options
     #   version - no value to set in packet object
     #   olen    - no value to set in packet object
     #             seems to always be 0 in the sigs anyway
@@ -135,7 +69,6 @@ def spoofPacket(spoof, packet):
         # Do we need to set the ttl to ttl - 1 ?
 
     rawBytes = str(packet.raw.tobytes()).encode('hex')
-    # print "phase 2 raw", rawBytes
     db.append(rawBytes)
 
     # If tcp header length > 20 then we have tcp options
@@ -150,7 +83,6 @@ def spoofPacket(spoof, packet):
         # since we're parsing up options, grab the new wsize too
         newOptionsBytes, wsize = reorderOptions(oldOptionsBytes, spoof)
         rawBytes = str(packet.raw.tobytes()).encode('hex')
-        # print "phase 3 raw", rawBytes
 
         # Mss and Scale were set in reorderOptions. Set new window_size to match
         packet.tcp.window_size = wsize
@@ -171,7 +103,6 @@ def spoofPacket(spoof, packet):
         packet.tcp.raw = packet.tcp.raw.tobytes().replace(fnd, rpc)
 
         rawBytes = str(packet.raw.tobytes()).encode('hex')
-        # print "phase 4 raw", rawBytes
         db.append(rawBytes)
 
         # print all rawBytes seen so far together for easier comparison for debugging
@@ -179,9 +110,6 @@ def spoofPacket(spoof, packet):
         print db[0]
         print db[1]
         print db[2]
-
-        # print (".. toList: " + str(options.tolist()))
-        # print (".. is this read only? " + str(options.readonly))  # we want to be able to write to this mem location
 
 
 def reorderOptions(optionsBytes, spoof):
@@ -215,68 +143,102 @@ def reorderOptions(optionsBytes, spoof):
                     optionsDict[command].append(optionsList[i])
                     i += 1
 
-    print "------> optionsDict", optionsDict
-    newOrder = spoof.olayout
-    print "newOrder", newOrder
     newOptions = ""
     # Loop through and make a new options string. 
     # Change values or include new options to match signature.
     for byte in spoof.olayout:
         if byte == spoof.optionNameToByte['ts']:
-            print "calling tsval_generate"
+            print 'calling tsval_generate'
             tsval = tsval_generate(spoof)
-            print "tsval returned", tsval
+            print 'tsval returned', tsval
             newOptions += byte + tsval
 
         # scale has to be set to signatures scale
-        elif byte != spoof.optionNameToByte["ws"] and byte in optionsDict:
+        elif byte != spoof.optionNameToByte['ws'] and byte in optionsDict:
             newOptions += byte + "".join(optionsDict[byte])
         else:  
             # include it with a default value
             newOptions += byte + spoof.defOptVals[byte]
         # We need the mss to calculate window size
-        if byte == spoof.optionNameToByte["mss"]:
+        if byte == spoof.optionNameToByte['mss']:
             mss = int(newOptions[-4:], 16)
 
     if not mss:
-        print "Warning: did not have mss set. Using default."
+        print 'Warning: did not have mss set. Using default.'
         mss = int(spoof.defOptVals[spoof.optionNameToByte["mss"]][-4:], 16)
 
     # the window size is dependent on knowing the mss and scale.
     # Calculate the new size here and return it so we can put it in the packet.
     wsize = mss * int(spoof.wsize_multiplier)
-    print "new window size", wsize
+    print 'new window size', wsize
 
     return newOptions, wsize
 
 
+def usage():
+    print "  -s <type>     int value for type of OS to spoof (default", DEFAULT_SPOOF_TYPE,")"
+    print "  --list-types  prints list of available OS's to impersonate" 
+    print "  -h            print this help message"
+
+def listTypes():
+    print 'Available options for -s:'
+    for k, v in typeMap.items():
+        print "    ", k,"    ", v
+
+
 def main():
-    print("Started d-divert")
-    lspoof = Spoof("Linux")
+    spoofType = DEFAULT_SPOOF_TYPE
+
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], 's:h', ['list-types'])
+    except getopt.GetoptError as err:
+        print err
+        usage()
+        return 1
+
+    # Then check the flags and get their values
+    for opt, arg in opts:
+        if opt == '-s':
+            try:
+                spoofType = typeMap[int(arg)]
+            except Exception as err:
+                print 'Invalid spoof type. Check available options with --list-types.', err
+                sys.exit(1)
+        elif opt == '--list-types':
+            listTypes()
+            return 0
+        elif opt == '-h':
+            usage()
+            return 0
+        else: 
+            usage()
+            return 1
+
+    lspoof = Spoof(spoofType)
 
     # It sucks that windivert filters like this. It would be cool if we 
     # could pass it a bpf like "port 1234" from the command line
-    with pydivert.WinDivert("tcp.DstPort==1234 or tcp.SrcPort==1234") as w:
-        print "here"
+    print 'Starting smudge...'
+    with pydivert.WinDivert('tcp.DstPort==1234 or tcp.SrcPort==1234') as w:
         print w
         for packet in w:
-            print "got packet"
+            print 'got packet'
             print (packet)
 
             # Look for syn packet. I think I read that mss is negotiated in 
             # handshake, or that fingerprinters typically only look at the handshake anyway
             if packet.tcp.syn is True and packet.tcp.ack is False :
-                print ("This is a syn packet, looking for options...")
+                print ('This is a syn packet, looking for options...')
 
                 spoofPacket(lspoof, packet)
-                print "__________ packet after spoofPacket__________ "
+                print '__________ packet after spoofPacket__________'
                 print packet
 
             # No need to recalc checksum, send does it for us.
             w.send(packet)
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    sys.exit(main())
 
 
 

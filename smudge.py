@@ -20,10 +20,22 @@ class Spoof:
     optionNameToByte = {'end':'00', 'nop':'01', 'mss':'02', 'ws':'03', 'sok':'04', 'ts':'08'}
     linuxDefOptVals = {'00':"", '01':"", '02':"0405b4", '03':"0307", '04':"02", '08':"0axxxxxxxx00000000"}
     linuxSig = "*:64:0:*:mss*20,7:mss,sok,ts,nop,ws:df,id+:0" 
+    osVersionSigMap = (('Linux',{
+                            '3.11': '*:64:0:*:mss*20,7:mss,sok,ts,nop,ws:df,id+:0',
+                            '3.1-3.10': '*:64:0:*:mss*10,4:mss,sok,ts,nop,ws:df,id+:0',
+                            '2.6.x': '*:64:0:*:mss*4,6:mss,sok,ts,nop,ws:df,id+:0'}),
+                        ('Windows', {
+                            '7':'*:128:0:*:8192,0:mss,nop,nop,sok:df,id+:0',
+                            '8':'*:128:0:*:8192,0:mss,nop,nop,sok:df,id+:0',
+                            'xp':'*:128:0:*:16384,0:mss,nop,nop,sok:df,id+:0'}),
+                       )
 
-    def __init__(self, spoofType):
-        if spoofType == "Linux":
-            self.configure(self.linuxSig)
+    def __init__(self, spoofType, spoofVersion=None):
+        #if spoofType == "Linux":
+            #self.configure(self.linuxSig)
+        
+        print "conifguring for signature", self.getSig(spoofType, spoofVersion)
+        self.configure(self.getSig(spoofType, spoofVersion))
 
     def configure(self, sig):
         s = str.split(sig, ":")
@@ -31,19 +43,53 @@ class Spoof:
         self.ttl = s[1]
         self.olen = s[2]
         self.mss = s[3]
-        self.wsize_multiplier = str.split(str.split(s[4], ",")[0], "*")[1]
+        self.wsize_multiplier = get_multiplier(str.split(str.split(s[4], ",")[0], "*")[1])
+        if self.wsize_multiplier is None:
+            self.wsize = asdfalksjdfaslkdj # make method to figure out if * is in the wsize, or if not return none and 
+                                            # we set the value as the int in the signature. Then in reorder options we 
+                                            # check if the wsize exists, else do the multiplier stuff.
         self.wscale = str.split(s[4], ",")[1]
         self.olayout = [self.optionNameToByte[x] for x in str.split(s[5], ",")]
         self.quirks = str.split(s[6], ",")
         self.pclass = s[7]
         self.defOptVals = self.linuxDefOptVals
 
+    @staticmethod   
+    def getVersionToSigMap(spoofType):
+        for tup in Spoof.osVersionSigMap:
+            if tup[0] == spoofType:
+                return tup[1]
+                
+        # if spoofType == "Linux":
+        #     return Spoof.osVersionSigMap
+        # if spoofType == "Windows":
+        #     pass
+
+    def getSig(self, spoofType, spoofVersion=None):
+        sigMap = self.getVersionToSigMap(spoofType)
+        if spoofVersion is None:
+            # get the first version as default if no version provided
+            spoofVersion = self.getVersions(spoofType)[0]
+        return sigMap[spoofVersion]
+
+    @staticmethod
+    def getVersions(spoofType):
+        """
+        return sorted list of versions for spoofType
+        """
+        sigMap = Spoof.getVersionToSigMap(spoofType)
+        return sorted(sigMap.keys(), reverse=True)
+
+    @staticmethod
+    def getOsList():
+        return [a[0] for a in Spoof.osVersionSigMap]
+
 
 # Option name string to byte value
 byteToOptName = {'00':'end', '01':'nop', '02':'mss', '03':'ws', '04':'sok', '08':'ts'}
 
 # Available Types
-typeMap = {0:'Linux'}
+typeMap = {0:'Linux', 1: "Windows"}
 DEFAULT_SPOOF_TYPE = "Linux"
 
 
@@ -174,23 +220,57 @@ def reorderOptions(optionsBytes, spoof):
 
     return newOptions, wsize
 
+def getSpoofType(strng):
+    osList = Spoof.getOsList()
+    # see if we were passed in a name
+    if strng in osList:
+        return strng
+
+    # else access by index
+    try:
+        spoofType = osList[int(strng)]
+    except Exception as err:
+        print 'Invalid spoof type', err
+        return None
+    return spoofType
+
 
 def usage():
-    print "  -s <type>     int value for type of OS to spoof (default", DEFAULT_SPOOF_TYPE,")"
-    print "  --list-types  prints list of available OS's to impersonate" 
-    print "  -h            print this help message"
+    print "  -s <type>                int value for type of OS to spoof (default", DEFAULT_SPOOF_TYPE + ")"
+    print "  -v <version>             version to spoof for type"
+    print "  --list-types             prints list of available OS's to impersonate" 
+    print "  --list-versions          lists available versions for type (defaul all)"
+    print "                             If used with -s, lists versions for that type only"
+    print "  -h                       print this help message"
+
 
 def listTypes():
-    print 'Available options for -s:'
-    for k, v in typeMap.items():
-        print "    ", k,"    ", v
+    print 'Available types:'
+    osList = Spoof.getOsList()
+    i = 0
+    for o in osList:
+        print "    ", i,"    ", o
+        i += 1
+
+
+def listVersions(t):
+    osList = [t]
+    if t == 'all':
+        osList = Spoof.getOsList()
+
+    for o in osList:
+        vlist = Spoof.getVersions(o)
+        print 'Available versions for', o
+        print "    ", vlist
 
 
 def main():
     spoofType = DEFAULT_SPOOF_TYPE
+    spoofSet = False
+    lstVersions = False
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 's:h', ['list-types'])
+        opts, args = getopt.getopt(sys.argv[1:], 's:v:h', ['list-types', 'list-versions'])
     except getopt.GetoptError as err:
         print err
         usage()
@@ -199,20 +279,29 @@ def main():
     # Then check the flags and get their values
     for opt, arg in opts:
         if opt == '-s':
-            try:
-                spoofType = typeMap[int(arg)]
-            except Exception as err:
-                print 'Invalid spoof type. Check available options with --list-types.', err
-                sys.exit(1)
+            spoofType = getSpoofType(arg)
+            spoofSet = True
+            if not spoofType:
+                listTypes()
+                return 1
         elif opt == '--list-types':
             listTypes()
             return 0
+        elif opt == '--list-versions':
+            lstVersions = True
         elif opt == '-h':
             usage()
             return 0
         else: 
             usage()
             return 1
+
+    if lstVersions:
+        if spoofSet:
+            listVersions(spoofType)
+        else:
+            listVersions('all')
+        return 0
 
     lspoof = Spoof(spoofType)
 

@@ -35,6 +35,17 @@ sig   = *:64:0:*:mss*10,5:mss,sok,ts,nop,ws:df,id+:0
 sig   = *:64:0:*:mss*10,6:mss,sok,ts,nop,ws:df,id+:0
 sig   = *:64:0:*:mss*10,7:mss,sok,ts,nop,ws:df,id+:0
 
+label = s:unix:Linux:2.6.x
+sig   = *:64:0:*:mss*4,6:mss,sok,ts,nop,ws:df,id+:0
+sig   = *:64:0:*:mss*4,7:mss,sok,ts,nop,ws:df,id+:0
+sig   = *:64:0:*:mss*4,8:mss,sok,ts,nop,ws:df,id+:0
+
+label = s:unix:Linux:2.4.x
+sig   = *:64:0:*:mss*4,0:mss,sok,ts,nop,ws:df,id+:0
+sig   = *:64:0:*:mss*4,1:mss,sok,ts,nop,ws:df,id+:0
+sig   = *:64:0:*:mss*4,2:mss,sok,ts,nop,ws:df,id+:0
+
+
 
 
 # WINDOWS 10 FINGERPRINT #
